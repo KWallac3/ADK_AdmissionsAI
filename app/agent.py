@@ -59,15 +59,54 @@ university_info_extractor = LlmAgent(
     Return data in the format defined by the UniversityInfo schema.
     """,
     description="Extracts structured university data from page content.",
-    tools=[google_search],  # Temporarily reuse google_search to simulate browsing for now
+    tools=[google_search], 
     output_key="university_info",
     #output_schema=UniversityInfo
+)
+
+
+#-------Missing Info Resolver --------
+missing_info_resolver = LlmAgent(
+    name="missing_info_resolver",
+    model=GEMINI_MODEL,
+    instruction="""
+    You are a follow-up researcher. You're given a partially complete UniversityInfo object.
+    Identify which fields are missing (marked 'N/A') and perform targeted searches using the google_search tool.
+
+    For example:
+    - If 'sat_range' is missing, search: "SAT range [college name] site:.edu"
+    - If 'campus_size' is missing, search: "[college name] campus size site:.edu"
+    
+    Your goal is to gather useful snippets or URLs to help fill in the gaps.
+    """,
+    description="Finds data for missing university fields via follow-up search.",
+    tools=[google_search],
+    output_key="followup_snippets"
+)
+
+
+# --- Report Writer Agent ---
+report_writer_agent = LlmAgent(
+    name="report_writer_agent",
+    model=GEMINI_MODEL,
+    instruction="""
+    You are given unstructured text content and are responsible for extracting structured data
+    using the UniversityInfo schema. Use 'N/A' where the data is not present.
+    Be concise and accurate.
+    """,
+    description="Final step: converts content into structured university info.",
+    tools=[],  # Cannot use tools when output_schema is set
+    output_key="university_info",
+    output_schema=UniversityInfo
 )
 
 # --- Root Agent: Executes Workflow ---
 root_agent = SequentialAgent(
     name="university_info_pipeline",
     description="Searches for and extracts university information.",
-    sub_agents=[search_agent, university_info_extractor]
+    sub_agents=[search_agent, 
+                university_info_extractor, 
+                missing_info_resolver, 
+                report_writer_agent]
     
 )
