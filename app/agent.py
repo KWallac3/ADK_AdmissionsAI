@@ -23,8 +23,20 @@ class UniversityInfo(BaseModel):
     student_body: str
     race_ethnicity: str
 
+class SportsInfo(BaseModel): # added
+    ncaa_division: str
+    conference: str
+    facilities: str
+    coaching_staff: str
+    team_roster: str
+    team_page_url: str
+
+
 class SearchResults(BaseModel):
     urls: conlist(str, min_length=1, max_length=5)
+
+class SportsSearchResults(BaseModel):
+    urls: conlist(str, min_length=1, max_length=5) # added
 
 # --- Search Agent ---
 search_agent = LlmAgent(
@@ -59,11 +71,10 @@ university_info_extractor = LlmAgent(
     Return data in the format defined by the UniversityInfo schema.
     """,
     description="Extracts structured university data from page content.",
-    tools=[google_search], 
+    tools=[google_search],  # Temporarily reuse google_search to simulate browsing for now
     output_key="university_info",
     #output_schema=UniversityInfo
 )
-
 
 #-------Missing Info Resolver --------
 missing_info_resolver = LlmAgent(
@@ -85,28 +96,73 @@ missing_info_resolver = LlmAgent(
 )
 
 
+# --- Sport Info Extractor ---
+sports_info_extractor = LlmAgent(
+    name="sports_info_extractor",
+    model=GEMINI_MODEL,
+    instruction="""
+    You are given links or content about a college's athletics program.
+    Extract information for the following fields:
+    - NCAA division
+    - Conference
+    - Facilities
+    - Coaching staff
+    - Team roster
+    - Team page URL
+
+    Use 'N/A' for any unknown or missing field.
+    """,
+    description="Extracts structured athletics program data.",
+    tools=[google_search],  # reuse google_search to simulate browsing
+    output_key="sports_info"
+)
+sports_info_filler = LlmAgent(
+    name="sports_info_filler",
+    model=GEMINI_MODEL,
+    instruction="""
+    You are a fact-checking agent that improves sports information.
+    Given sports data with 'N/A' values and URLs related to a specific college team,
+    issue targeted follow-up searches using google_search to fill in the missing fields.
+
+    For example:
+    - "UCLA womens track and field NCAA division"
+    - "Yale mens soccer coaching staff"
+    - "University of Florida athletics facilities"
+
+    Update only the missing fields. If nothing useful is found, leave the value as 'N/A'.
+    Return a complete and cleaned SportsInfo schema.
+    """,
+    description="Fills in missing sports data using targeted queries.",
+    tools=[google_search],
+    output_key="completed_sports_info"
+)
+
+
 # --- Report Writer Agent ---
 report_writer_agent = LlmAgent(
     name="report_writer_agent",
     model=GEMINI_MODEL,
-    instruction="""
-    You are given unstructured text content and are responsible for extracting structured data
-    using the UniversityInfo schema. Use 'N/A' where the data is not present.
-    Be concise and accurate.
+   instruction="""
+    You are an assistant writing reports for student-athletes.
+    Combine UniversityInfo and SportsInfo into a readable summary report.
+    If any values are 'N/A', indicate clearly that information is not available.
     """,
     description="Final step: converts content into structured university info.",
     tools=[],  # Cannot use tools when output_schema is set
-    output_key="university_info",
-    output_schema=UniversityInfo
+    output_key="final_report",
+    output_schema=None,
 )
 
 # --- Root Agent: Executes Workflow ---
 root_agent = SequentialAgent(
-    name="university_info_pipeline",
-    description="Searches for and extracts university information.",
-    sub_agents=[search_agent, 
-                university_info_extractor, 
-                missing_info_resolver, 
-                report_writer_agent]
-    
+    name="college_info_pipeline",
+    description="Gathers both academic and athletics info.",
+    sub_agents=[
+        search_agent,
+        university_info_extractor,
+        missing_info_resolver,
+        sports_info_extractor,
+        sports_info_filler,              
+        report_writer_agent
+    ]
 )
