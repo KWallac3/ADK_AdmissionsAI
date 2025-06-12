@@ -143,12 +143,20 @@ report_writer_agent = LlmAgent(
     name="report_writer_agent",
     model=GEMINI_MODEL,
    instruction="""
-    You are an assistant writing reports for student-athletes.
-    Combine UniversityInfo and SportsInfo into a readable summary report.
-    If any values are 'N/A', indicate clearly that information is not available.
+   You are an assistant writing reports for student-athletes.
+    You will be given two inputs:
+    - UniversityInfo: structured information about the college
+    - SportsInfo: structured info about the team (e.g., women's track and field)
+
+    Write a readable summary that combines both academic and athletics details.
+    Mention:
+    - College name, setting, size, graduation rate, tuition, student body, etc.
+    - Team division, conference, coaching staff, facilities, and page URL.
+    Clearly indicate if any data is missing (i.e., 'N/A').
+    
     """,
     description="Final step: converts content into structured university info.",
-    tools=[],  # Cannot use tools when output_schema is set
+    tools=[],  
     output_key="final_report",
     output_schema=None,
 )
