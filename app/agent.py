@@ -1,4 +1,3 @@
-#Claud assist
 from google.adk.agents.llm_agent import LlmAgent
 from google.adk.agents.sequential_agent import SequentialAgent
 from google.adk.tools import google_search
@@ -34,6 +33,7 @@ class SportsInfo(BaseModel):
     coaching_staff: str = Field(description="Current coaching staff information including names and titles (e.g., 'Head Coach: John Doe, Assistant Coach: Jane Smith')")
     team_roster: str = Field(description="Current team composition and size (e.g., '25 athletes, 10 freshmen, 8 sophomores, 7 juniors', 'Current roster of 30 players')")
     team_page_url: str = Field(description="Official team webpage URL (e.g., 'https://athletics.college.edu/sports/team-name')")
+    #recruiting_standards: str = Field(description="recruiting standard or from https://runcruit.com/")
 
 # Note: SearchResults schemas removed since we can't use output_schema with tools
 
@@ -140,6 +140,7 @@ sports_info_extractor = LlmAgent(
     - coaching_staff: Coach names and titles
     - team_roster: Team size and composition
     - team_page_url: Official team page URL
+    
 
     Use 'N/A' for any unknown or missing fields.
     """,
@@ -228,4 +229,3 @@ root_agent = SequentialAgent(
         report_writer_agent          # Generate final comprehensive report
     ]
 )
-
