@@ -13,8 +13,9 @@ HARDCODED_STUDENT_PROFILE = {
     "full_name": "Alex Morgan",
     "grade_level": "11th", # Junior year
     "primary_sport": "Track and Field",
-    "events": ["100m", "200m", "Long Jump"],  # Student's specific events
+    "events": ["55m","100m", "200m", "Long Jump"],  # Student's specific events
     "personal_records": {
+        "55M": "7.6",
         "100m": "12.45",
         "200m": "25.80", 
         "Long_Jump": "5.20m"
@@ -85,12 +86,12 @@ class SportsInfo(BaseModel):
     coaching_staff: str = Field(description="Current coaching staff information")
     team_roster: str = Field(description="Current team composition and size")
     team_page_url: str = Field(description="Official team webpage URL")
-    current_performers: List[CurrentPerformer] = Field(
-        description="List of best current performers with their names, marks, and rankings for the 2024-2025 season in specified event categories."
-    )
-    championship_results: List[ChampionshipResult] = Field(
-        description="List of most recent conference championship final results, including event names, gender, finalists, and their marks/times."
-    )
+    current_performers: List[CurrentPerformer] = Field(description="List of best current performers with their names, marks, and rankings for the 2024-2025 season in specified event categories.")
+    championship_results: List[ChampionshipResult] = Field(description="List of most recent conference championship final results, including event names, gender, finalists, and their marks/times.")
+    recruiting_standards: str = Field(description="Published recruiting standards or typical performance levels for recruited athletes")
+    walk_on_standards: str = Field(description="Walk-on tryout standards or minimum performance levels")
+    conference_qualifying_marks: str = Field(description="Conference championship qualifying standards for relevant events")
+    team_depth_analysis: str = Field(description="Analysis of roster depth and competition for spots in relevant events")
 
 
 
@@ -125,6 +126,33 @@ university_info_extractor = LlmAgent(
     === STUDENT PROFILE ===
     {PROFILE_FOR_AGENT}
     === END STUDENT PROFILE ===
+
+    You are a specialized sports data researcher focusing on recruitment fit analysis.
+
+    CRITICAL TASK: You must collect specific performance data to assess whether this student-athlete could compete at this college level.
+
+    For Track and Field, search for and extract:
+    1. **Current team performance standards:**
+    - What times/marks are the current athletes posting in the student's events?
+    - What are the team's recruiting standards or walk-on standards?
+    - Conference qualifying marks for the student's events
+
+    2. **Recent recruiting classes:**
+    - What caliber of athletes has this program recruited recently?
+    - What were their high school PRs when recruited?
+
+    3. **Team depth and opportunities:**
+    - How many athletes compete in the student's events?
+    - Are there scholarship spots typically available?
+    - What's the competition level for roster spots?
+
+    Use queries like:
+    - "[college name] track field recruiting standards 2024-2025"
+    - "[college name] track field roster [student's events] times marks"
+    - "[conference name] qualifying standards track field"
+    - "[college name] track field walk-on tryout standards"
+
+    IMPORTANT: Include specific performance benchmarks in your extracted data so we can compare against the student's abilities.
  
 
     You are given URLs pointing to official college websites. Visit those URLs and extract relevant data matching the UniversityInfo schema below.
@@ -152,6 +180,10 @@ sports_info_extractor = LlmAgent(
     name="sports_info_extractor",
     model=GEMINI_MODEL,
     instruction=f"""
+    === STUDENT PROFILE ===
+    {PROFILE_FOR_AGENT}
+    === END STUDENT PROFILE ===
+
     You MUST consider this student's specific characteristics when extracting data:
     - Focus on admission requirements relevant to their GPA ({HARDCODED_STUDENT_PROFILE['unweighted_gpa']}) and test scores
     - Prioritize cost information since financial considerations are important
@@ -161,6 +193,8 @@ sports_info_extractor = LlmAgent(
     specifically focusing on current season top performers and recent conference championship results.
     Student Profile:
     {PROFILE_FOR_AGENT}
+
+    Search for current  {HARDCODED_STUDENT_PROFILE['gender']} {HARDCODED_STUDENT_PROFILE['primary_sport']} roster and times for events like sprints, distance, throws, jumps - whatever the student's focus area is
 
     When searching, prioritize authoritative and up-to-date platforms.
     Dynamically select your search strategy based on the sport:
@@ -231,6 +265,29 @@ report_writer_agent = LlmAgent(
     === STUDENT PROFILE ===
     {PROFILE_FOR_AGENT}
     === END STUDENT PROFILE ===
+
+CRITICAL: You must provide a detailed athletic fit assessment that includes:
+
+1. **Performance Gap Analysis:**
+   - Compare the student's current times/marks to the team's current performers
+   - Compare to conference qualifying standards
+   - Assess how much improvement would be needed to contribute
+
+2. **Recruitment Viability:**
+   - Based on team recruiting standards, assess recruitment likelihood
+   - Evaluate walk-on opportunities if applicable
+   - Consider the student's improvement trajectory and potential
+
+3. **Competitive Opportunity:**
+   - Analyze roster depth in the student's events
+   - Assess realistic timeline for contributing to the team
+   - Consider scholarship availability
+
+4. **Development Potential:**
+   - Factor in the student's current level vs. what's typical for recruits
+   - Consider coaching program's track record of athlete development
+
+Make this assessment specific and realistic - don't just say "great program" but actually analyze whether this student could realistically compete there.
     
     You are a professional college advisor specializing in student-athlete recruitment.
     Write a comprehensive, professional, and empathetic report for the student-athlete based on the university and athletics data provided.
