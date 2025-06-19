@@ -1,3 +1,4 @@
+# === Imports ===
 import asyncio
 from typing import List, Optional
 
@@ -6,8 +7,7 @@ from google.adk.agents.sequential_agent import SequentialAgent
 from google.adk.tools import google_search
 from pydantic import BaseModel, Field
 
-# --- Student Profile Collection ---
-# This profile is built directly into the code for simplicity.
+# --- Student Profile (Hard Coded) ---
 # CHANGE these values to simulate different students.
 HARDCODED_STUDENT_PROFILE = {
     "full_name": "Alex Morgan",
@@ -29,7 +29,7 @@ HARDCODED_STUDENT_PROFILE = {
     # Note: target_college will be provided by user input during runtime
 }
 
-# Helper function to convert dict to formatted string for LLM instructions
+# === Utility: Profile Formatter ===
 def profile_to_string(profile: dict) -> str:
     """Converts a student profile dictionary into a readable string format for the AI."""
     s = []
@@ -37,7 +37,7 @@ def profile_to_string(profile: dict) -> str:
         s.append(f"- {k.replace('_', ' ').title()}: {v}")
     return "\n".join(s)
 
-# Format the hardcoded profile for agent instructions
+# Prepares the student profile string for use in agent prompts
 PROFILE_FOR_AGENT = profile_to_string(HARDCODED_STUDENT_PROFILE)
 print("PROFILE_FOR_AGENT content:")
 print(repr(PROFILE_FOR_AGENT))
@@ -45,8 +45,8 @@ print(repr(PROFILE_FOR_AGENT))
 # --- Global Configuration ---
 GEMINI_MODEL = "gemini-2.0-flash-001"
 
-# --- Schemas ---
-# Original UniversityInfo schema 
+# === Schema Definitions ===
+# Defines academic and admissions-related info for a university 
 class UniversityInfo(BaseModel):
     college_name: str = Field(description="Full legal name of the college")
     college_type: str = Field(description="Institution type (e.g., 'Private', 'Public')")
@@ -78,7 +78,7 @@ class ChampionshipResult(BaseModel):
     gender: str = Field(description="Gender for the event ('Men' or 'Women')")
     finalists: List[dict] = Field(description="List of dictionaries, each containing 'name', 'school_team', and 'mark_time' for finalists.")
     
-# Updated SportsInfo schema to include new sports performance data 
+# Athletic program schema containing performance, recruiting, and team info 
 class SportsInfo(BaseModel):
     ncaa_division: str = Field(description="NCAA division classification")
     conference: str = Field(description="Athletic conference affiliation")
@@ -257,7 +257,7 @@ Return the updated, combined data as a single JSON object.
     output_key="completed_info"
 )
 
-# 5. Report Writer Agent 
+# 5. Report Writer – Generates a final narrative assessment using all compiled data 
 report_writer_agent = LlmAgent(
     name="report_writer_agent",
     model=GEMINI_MODEL,
@@ -308,7 +308,8 @@ Make this assessment specific and realistic - don't just say "great program" but
     output_key="final_report"
 )
 
-# --- Root Sequential Agent  ---
+# === Sequential Orchestration ===
+# Orchestrates the agent pipeline: search → extract → complete → report
 root_agent = SequentialAgent(
     name="college_info_pipeline",
     description="Comprehensive college research pipeline for student-athletes.",
