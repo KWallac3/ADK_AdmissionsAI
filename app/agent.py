@@ -1,33 +1,11 @@
 # === Imports ===
 import asyncio
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 from google.adk.agents.llm_agent import LlmAgent
 from google.adk.agents.sequential_agent import SequentialAgent
 from google.adk.tools import google_search
 from pydantic import BaseModel, Field
-
-# --- Student Profile (Hard Coded) ---
-# CHANGE these values to simulate different students.
-HARDCODED_STUDENT_PROFILE = {
-    "full_name": "Alex Morgan",
-    "grade_level": "11th", # Junior year
-    "primary_sport": "Track and Field",
-    "events": ["55m","100m", "200m", "Long Jump"],  # Student's specific events
-    "personal_records": {
-        "55M": "7.6",
-        "100m": "12.45",
-        "200m": "25.80", 
-        "Long_Jump": "5.20m"
-    },
-    "gender": "Female",
-    "unweighted_gpa": 3.75,
-    "gpa_scale": 4.0,
-    "sat_score": 1380, # Example SAT score
-    "act_score": "N/A", # Example ACT score, N/A if not taken
-    "high_school": "My High School",
-    # Note: target_college will be provided by user input during runtime
-}
 
 # === Utility: Profile Formatter ===
 def profile_to_string(profile: dict) -> str:
@@ -37,10 +15,54 @@ def profile_to_string(profile: dict) -> str:
         s.append(f"- {k.replace('_', ' ').title()}: {v}")
     return "\n".join(s)
 
-# Prepares the student profile string for use in agent prompts
-PROFILE_FOR_AGENT = profile_to_string(HARDCODED_STUDENT_PROFILE)
-print("PROFILE_FOR_AGENT content:")
-print(repr(PROFILE_FOR_AGENT))
+# --- Function to get student profile (CLI for basic input) ---
+def get_student_profile() -> Dict[str, Any]:
+    """
+    Retrieves the student profile by prompting the user for basic information via CLI.
+    Other details will use default values.
+    """
+    print("--- Please Enter Student Profile Information ---")
+
+    full_name = input("Full Name (e.g., Alex Morgan): ") or "Alex Morgan"
+    grade_level = input("Grade Level (e.g., 11th): ") or "11th"
+    primary_sport = input("Primary Sport (e.g., Track and Field): ") or "Track and Field"
+    gender = input("Gender (e.g., Female/Male/Non-binary): ") or "Female"
+
+    unweighted_gpa_str = input("Unweighted GPA (e.g., 3.75): ")
+    try:
+        unweighted_gpa = float(unweighted_gpa_str) if unweighted_gpa_str else 3.75
+    except ValueError:
+        print("Invalid GPA format. Using default 3.75.")
+        unweighted_gpa = 3.75
+
+    sat_score_str = input("SAT Score (e.g., 1380): ")
+    try:
+        sat_score = int(sat_score_str) if sat_score_str else 1380
+    except ValueError:
+        print("Invalid SAT score format. Using default 1380.")
+        sat_score = 1380
+
+    # Default values for other fields to keep CLI simple for now
+    profile_data = {
+        "full_name": full_name,
+        "grade_level": grade_level,
+        "primary_sport": primary_sport,
+        "events": ["55m","100m", "200m", "Long Jump"],  # Default
+        "personal_records": { # Default
+            "55M": "7.6",
+            "100m": "12.45",
+            "200m": "25.80",
+            "Long_Jump": "5.20m"
+        },
+        "gender": gender,
+        "unweighted_gpa": unweighted_gpa,
+        "gpa_scale": 4.0, # Default
+        "sat_score": sat_score,
+        "act_score": "N/A", # Default
+        "high_school": "My High School", # Default
+    }
+    print("-------------------------------------------------")
+    return profile_data
 
 # --- Global Configuration ---
 GEMINI_MODEL = "gemini-2.0-flash-001"
@@ -95,36 +117,39 @@ class SportsInfo(BaseModel):
 
 
 
-# --- Agents ---
+# --- Agent Definitions within a Function ---
 
-# 1. University Info Search Agent 
-search_agent = LlmAgent(
-    name="search_agent",
-    model=GEMINI_MODEL,
-    instruction="""
-    You are a research assistant for student-athletes.
-    Your task is to find official .edu webpages related to the student's target college, including admissions stats, cost, fast facts, common data set, and about pages.
+def create_agent_pipeline(student_profile_data: Dict[str, Any]) -> SequentialAgent:
+    """
+    Creates and configures the sequential agent pipeline with dynamic student profile information.
+    """
+    profile_for_agent_string = profile_to_string(student_profile_data)
 
-Use google_search tool to find 1–3 relevant URLs with queries such as:
-- "[college name] admissions statistics site:.edu"
-- "[college name] fast facts site:.edu"
-- "[college name] common data set site:.edu"
-- "[college name] tuition site:.edu"
+    # 1. University Info Search Agent (No profile needed for this one)
+    search_agent = LlmAgent(
+        name="search_agent",
+        model=GEMINI_MODEL,
+        instruction="""
+        You are a research assistant for student-athletes.
+        Your task is to find official .edu webpages related to the student's target college, including admissions stats, cost, fast facts, common data set, and about pages.
 
-Return the top 3–5 most relevant URLs as a simple list.
-""",
-    description="Finds relevant official .edu URLs for college information.",
-    tools=[google_search],
-    output_key="university_search_results"
-)
+    Use google_search tool to find 1–3 relevant URLs with queries such as:
+    - "[college name] admissions statistics site:.edu"
+    - "[college name] fast facts site:.edu"
+    - "[college name] common data set site:.edu"
+    - "[college name] tuition site:.edu"
 
-# 2. University Info Extraction Agent
-university_info_extractor = LlmAgent(
-    name="university_info_extractor",
-    model=GEMINI_MODEL,
-    instruction=f"""
+    Return the top 3–5 most relevant URLs as a simple list.
+    """,
+        description="Finds relevant official .edu URLs for college information.",
+        tools=[google_search],
+        output_key="university_search_results"
+    )
+
+    # 2. University Info Extraction Agent
+    university_info_extractor_instruction = f"""
     === STUDENT PROFILE ===
-    {PROFILE_FOR_AGENT}
+    {profile_for_agent_string}
     === END STUDENT PROFILE ===
 
     You are a specialized sports data researcher focusing on recruitment fit analysis.
@@ -166,35 +191,34 @@ university_info_extractor = LlmAgent(
 
     Return data in JSON format strictly adhering to the UniversityInfo schema. Use 'N/A' for any missing fields.
 
-UniversityInfo fields:
-- college_name, college_type, campus_setting, campus_size, graduation_rate, acceptance_rate,
-  website, sat_range, act_range, regular_application_due, tuition, other_fees, student_body, race_ethnicity
-""",
-    description="Extracts structured university data from page content.",
-    tools=[google_search], 
-    output_key="university_info"
-)
+    UniversityInfo fields:
+    - college_name, college_type, campus_setting, campus_size, graduation_rate, acceptance_rate,
+      website, sat_range, act_range, regular_application_due, tuition, other_fees, student_body, race_ethnicity
+    """
+    university_info_extractor = LlmAgent(
+        name="university_info_extractor",
+        model=GEMINI_MODEL,
+        instruction=university_info_extractor_instruction,
+        description="Extracts structured university data from page content.",
+        tools=[google_search],
+        output_key="university_info"
+    )
 
-# 3. Sports Info Search Agent 
-sports_info_extractor = LlmAgent(
-    name="sports_info_extractor",
-    model=GEMINI_MODEL,
-    instruction=f"""
+    # 3. Sports Info Search Agent
+    sports_info_extractor_instruction = f"""
     === STUDENT PROFILE ===
-    {PROFILE_FOR_AGENT}
+    {profile_for_agent_string}
     === END STUDENT PROFILE ===
 
     You MUST consider this student's specific characteristics when extracting data:
-    - Focus on admission requirements relevant to their GPA ({HARDCODED_STUDENT_PROFILE['unweighted_gpa']}) and test scores
+    - Focus on admission requirements relevant to their GPA ({student_profile_data['unweighted_gpa']}) and test scores
     - Prioritize cost information since financial considerations are important
-    - Look for information about {HARDCODED_STUDENT_PROFILE['primary_sport']} programs if available
+    - Look for information about {student_profile_data['primary_sport']} programs if available
 
     You are a specialized sports data researcher. Your task is to find official athletics information for a given college and sport,
     specifically focusing on current season top performers and recent conference championship results.
-    Student Profile:
-    {PROFILE_FOR_AGENT}
 
-    Search for current  {HARDCODED_STUDENT_PROFILE['gender']} {HARDCODED_STUDENT_PROFILE['primary_sport']} roster and times for events like sprints, distance, throws, jumps - whatever the student's focus area is
+    Search for current {student_profile_data['gender']} {student_profile_data['primary_sport']} roster and times for events like sprints, distance, throws, jumps - whatever the student's focus area is
 
     When searching, prioritize authoritative and up-to-date platforms.
     Dynamically select your search strategy based on the sport:
@@ -204,7 +228,7 @@ sports_info_extractor = LlmAgent(
     - Use queries like:
         - "TFRRS [college name] track and field current season results"
         - "NCAA Track and Field Statistics and Records official website"
-        - "[conference name] Track and Field Championship results 2024-2025 [gender]"
+        - "[conference name] Track and Field Championship results 2024-2025 {student_profile_data['gender']}"
         - "[college name] track and field top performers 2024-2025 [event categories]"
         - "official website [conference name] athletics results"
 
@@ -213,7 +237,7 @@ sports_info_extractor = LlmAgent(
     - Use queries like:
         - "SWIMS 3.0 [college name] swimming current season"
         - "NCAA Swimming and Diving Statistics and Records official website"
-        - "[conference name] Swimming and Diving Championship results 2024-2025 [gender]"
+        - "[conference name] Swimming and Diving Championship results 2024-2025 {student_profile_data['gender']}"
         - "[college name] swimming top performers 2024-2025 [event categories]"
         - "official website [conference name] swimming and diving results"
 
@@ -227,99 +251,186 @@ sports_info_extractor = LlmAgent(
 
     SportsInfo fields:
     - ncaa_division, conference, facilities, coaching_staff, team_roster, team_page_url, current_performers, championship_results
-    """,
-    description="Searches for and extracts athletics program data, including current performers and championship results.",
-    tools=[google_search],
-    output_key="sports_info_extracted"
-)
+    """
+    sports_info_extractor = LlmAgent(
+        name="sports_info_extractor",
+        model=GEMINI_MODEL,
+        instruction=sports_info_extractor_instruction,
+        description="Searches for and extracts athletics program data, including current performers and championship results.",
+        tools=[google_search],
+        output_key="sports_info_extracted"
+    )
 
-# 4. Missing Info Resolver Agent (single for university and sports) 
-missing_info_resolver = LlmAgent(
-    name="missing_info_resolver",
-    model=GEMINI_MODEL,
-    instruction="""
-    You are a meticulous data consolidator. You are given partial JSON data for university and sports information, some fields marked 'N/A'.
+# === Combined Data Schema ===
+class ComprehensiveCollegeReportData(BaseModel):
+    university_details: UniversityInfo = Field(description="Comprehensive information about the university's academics, admissions, and general facts.")
+    athletics_details: SportsInfo = Field(description="Detailed information about the university's athletic programs, team performance, and recruiting.")
+    target_college_name: str = Field(description="The name of the college being researched.")
 
-Your tasks:
--Review the provided 'university_info_extracted' and 'sports_info_extracted' objects
-- Identify all fields that are currently 'N/A' or clearly missing values.
-- For each missing field, generate highly targeted google_search queries to fill missing fields, focusing on official .edu sources where possible.
-- Examples:
-  - "[college_name] tuition fees site:.edu"
-  - "[college_name] {HARDCODED_STUDENT_PROFILE['primary_sport]} coaching staff site:.edu"
-- Attempt to fill in as many missing fields as possible; keep 'N/A' only if data cannot be found.
-- **Crucially, Rcombine the data from both university and sports information into a single JSON 
-object that conforms to the combined fields of both UniversityInfo and SportsInfo schemas.** Ensure all fields from both schemas are present in the final output.
-Return the updated, combined data as a single JSON object.
-""",
-    description="Fills missing university and sports info fields by targeted searches.",
-    tools=[google_search],
-    output_key="completed_info"
-)
 
-# 5. Report Writer – Generates a final narrative assessment using all compiled data 
-report_writer_agent = LlmAgent(
-    name="report_writer_agent",
-    model=GEMINI_MODEL,
-    instruction=f"""
+    # 4. Missing Info Resolver Agent (single for university and sports)
+    missing_info_resolver_instruction = f"""
+    You are a meticulous data consolidator. You are given:
+    1. Partially populated JSON data for 'university_info' (conforming to UniversityInfo schema).
+    2. Partially populated JSON data for 'sports_info' (conforming to SportsInfo schema).
+    3. The 'target_college_name'.
+
+    Your tasks are as follows:
+
+    1.  **Comprehensive Review:**
+        *   Thoroughly examine the provided `university_info` (conforming to UniversityInfo schema) and `sports_info` (conforming to SportsInfo schema) objects.
+        *   Identify EVERY field, including nested fields within lists or sub-objects, that is currently marked 'N/A', is an empty string/list, or seems to be a placeholder indicating missing information.
+
+    2.  **Targeted Information Retrieval:**
+        *   For each identified missing piece of information, formulate highly specific `google_search` queries.
+        *   **Prioritize official sources:** For `university_details`, always prefer `.edu` domains of the `target_college_name`. For `athletics_details`, prioritize official athletic department websites, conference websites, and reputable sports data providers (e.g., TFRRS for Track & Field, SWIMS for Swimming).
+        *   **Iterative Searching:** If a first query doesn't yield the result, try variations. For example, if "[target_college_name] SAT range site:.edu" fails, try "[target_college_name] admissions statistics site:.edu" and look for test score data.
+        *   **Contextual Search for Complex Data:**
+            *   For lists like `current_performers` or `championship_results`, if the list is empty or missing, search for the overall data (e.g., "TFRRS [target_college_name] {student_profile_data['gender']} {student_profile_data['primary_sport']} roster 2024-2025").
+            *   If specific items within these lists are missing (e.g., a performer's `class_year`), try to find that specific detail if the rest of the item is present.
+        *   **Example Queries (adapt these using the actual `target_college_name` and `student_profile_data` from the context):**
+            *   Missing `tuition` in `university_info`: "[target_college_name] undergraduate tuition and fees site:.edu"
+            *   Missing `coaching_staff` in `sports_info`: "[target_college_name] {student_profile_data['primary_sport']} coaching staff site:.edu athletics"
+            *   Missing `current_performers` in `sports_info` for Track & Field: "TFRRS [target_college_name] {student_profile_data['gender']} {student_profile_data['primary_sport']} top performers 2024-2025"
+            *   Missing `acceptance_rate` in `university_info`: "[target_college_name] common data set admissions site:.edu" OR "[target_college_name] admissions facts site:.edu"
+
+    3.  **Data Integration and Validation:**
+        *   Update the `university_info` and `sports_info` objects with the information you find.
+        *   **Persistence of 'N/A':** Only retain 'N/A' (or leave a field empty if appropriate for its type, e.g., an empty list) if, after diligent and varied search attempts, you confirm the information is genuinely unavailable, not published, or not applicable (e.g., ACT range for a test-blind school). Do not use 'N/A' if you simply couldn't find it on the first try.
+
+    4.  **Structured Output Generation:**
+        *   After attempting to fill all missing information, you MUST structure your final output as a single JSON object conforming to the `ComprehensiveCollegeReportData` schema.
+        *   This means the final JSON must have three top-level keys:
+            *   `university_details`: Containing the updated UniversityInfo data.
+            *   `athletics_details`: Containing the updated SportsInfo data.
+            *   `target_college_name`: The original target college name you were given.
+
+    Example of the final output structure:
+    {{
+        "university_details": {{ ... all UniversityInfo fields ... }},
+        "athletics_details": {{ ... all SportsInfo fields ... }},
+        "target_college_name": "Actual College Name"
+    }}
+
+    Return this single, structured JSON object.
+    """
+    missing_info_resolver = LlmAgent(
+        name="missing_info_resolver",
+        model=GEMINI_MODEL,
+        instruction=missing_info_resolver_instruction,
+        description="Fills missing university and sports info fields by targeted searches.",
+        tools=[google_search],
+        output_key="completed_info"
+    )
+
+    # 5. Report Writer – Generates a final narrative assessment using all compiled data
+    report_writer_agent_instruction = f"""
     === STUDENT PROFILE ===
-    {PROFILE_FOR_AGENT}
+    {profile_for_agent_string}
     === END STUDENT PROFILE ===
 
-CRITICAL: You must provide a detailed athletic fit assessment that includes:
+    CRITICAL: You must provide a detailed athletic fit assessment that includes:
 
-1. **Performance Gap Analysis:**
-   - Compare the student's current times/marks to the team's current performers
-   - Compare to conference qualifying standards
-   - Assess how much improvement would be needed to contribute
+    1. **Performance Gap Analysis:**
+       - Compare the student's current times/marks to the team's current performers
+       - Compare to conference qualifying standards
+       - Assess how much improvement would be needed to contribute
 
-2. **Recruitment Viability:**
-   - Based on team recruiting standards, assess recruitment likelihood
-   - Evaluate walk-on opportunities if applicable
-   - Consider the student's improvement trajectory and potential
+    2. **Recruitment Viability:**
+       - Based on team recruiting standards, assess recruitment likelihood
+       - Evaluate walk-on opportunities if applicable
+       - Consider the student's improvement trajectory and potential
 
-3. **Competitive Opportunity:**
-   - Analyze roster depth in the student's events
-   - Assess realistic timeline for contributing to the team
-   - Consider scholarship availability
+    3. **Competitive Opportunity:**
+       - Analyze roster depth in the student's events
+       - Assess realistic timeline for contributing to the team
+       - Consider scholarship availability
 
-4. **Development Potential:**
-   - Factor in the student's current level vs. what's typical for recruits
-   - Consider coaching program's track record of athlete development
+    4. **Development Potential:**
+       - Factor in the student's current level vs. what's typical for recruits
+       - Consider coaching program's track record of athlete development
 
-Make this assessment specific and realistic - don't just say "great program" but actually analyze whether this student could realistically compete there.
-    
+    Make this assessment specific and realistic - don't just say "great program" but actually analyze whether this student could realistically compete there.
+
     You are a professional college advisor specializing in student-athlete recruitment.
-    Write a comprehensive, professional, and empathetic report for the student-athlete based on the university and athletics data provided.
+    Write a comprehensive, professional, and empathetic report for the student-athlete.
+    You will receive a JSON object conforming to the `ComprehensiveCollegeReportData` schema. This object contains:
+    1. `university_details`: Academic and general information about the college.
+    2. `athletics_details`: Specifics about the college's athletic programs, team performance, and recruiting for the student's sport.
+    3. `target_college_name`: The name of the college.
+
+    The report should use this data to cover the following sections:
+    - **College Overview:** Briefly introduce the {{{{ target_college_name }}}}.
+    - **Academic Profile Summary:** Based on `university_details`.
+    - **Athletics Program Summary:** Based on `athletics_details` for {{{{ student_profile_data['primary_sport'] }}}}.
+    - **Fit Assessment and Recommendations:** This is the most crucial part. Integrate insights from both academic and athletic data.
+    - Note any missing data (fields marked 'N/A' within `university_details` or `athletics_details`) clearly.
+
+    **Important Content Rules ( tái khẳng định ):**
+    - Do not fabricate data.
+    - Maintain Professional advisory tone.
+    - Do not make subjective judgements or provide personal opions on demographics. Simple state the facts.
+    """
+    report_writer_agent = LlmAgent(
+        name="report_writer_agent",
+        model=GEMINI_MODEL,
+        instruction=report_writer_agent_instruction,
+        description="Creates comprehensive student-athlete college report.",
+        tools=[],
+        output_key="final_report"
+    )
+
+    # === Sequential Orchestration ===
+    # Orchestrates the agent pipeline: search → extract → complete → report
+    root_agent = SequentialAgent(
+        name="college_info_pipeline",
+        description="Comprehensive college research pipeline for student-athletes.",
+        sub_agents=[
+            search_agent,
+            university_info_extractor,
+            sports_info_extractor,
+            missing_info_resolver,
+            report_writer_agent
+        ]
+    )
+    return root_agent
+
+# === Main Execution Block (Example) ===
+async def main():
+    # 1. Get student profile
+    student_profile = get_student_profile()
+    print("--- Student Profile Loaded ---")
+    print(profile_to_string(student_profile))
+    print("-----------------------------")
+
+    # 2. Create the agent pipeline with the student's profile
+    agent_pipeline = create_agent_pipeline(student_profile)
+
+    # 3. Prepare inputs for the pipeline
+    target_college_name = input("Enter the target college name (e.g., Stanford University): ") or "Stanford University"
+    initial_input = {"target_college": target_college_name, "student_profile": student_profile}
     
-    The report should include the following sections:
-    - Academic profile summary
-    - Athletics program summary
-    - Fit assessment and recommendations
-    - Note any missing data clearly as 'N/A'
+    print(f"\n--- Starting Agent Pipeline for {target_college_name} ---")
+    # 4. Run the agent pipeline (example invocation)
+    #    Actual execution might vary based on how google-adk expects inputs and runs.
+    #    This is a placeholder for how you might run it.
+    # result = await agent_pipeline.arun(initial_input)
+    # print("\n--- Pipeline Finished ---")
+    # print("Final Report (or result):")
+    # print(result)
+    print("--- Agent Pipeline Created (Execution not yet implemented in this refactor) ---")
 
-    **Important Content Rules:*
-    -Do not fabricate data.
-    -Maintain Professional advisory tone.
-    -Do not make subjective judgements or provide personal opions on demographics. Simple state the facts.
-""",
-    description="Creates comprehensive student-athlete college report.",
-    tools=[],
-    output_key="final_report"
-)
 
-# === Sequential Orchestration ===
-# Orchestrates the agent pipeline: search → extract → complete → report
-root_agent = SequentialAgent(
-    name="college_info_pipeline",
-    description="Comprehensive college research pipeline for student-athletes.",
-    sub_agents=[
-        search_agent,
-        university_info_extractor,
-        sports_info_extractor,
-        missing_info_resolver,  # Single gap-filler for both university & sports
-        report_writer_agent
-    ]
-)
-
- 
+if __name__ == "__main__":
+    # Note: To run this if it were complete, you'd likely use:
+    # asyncio.run(main())
+    # For now, just demonstrating the setup
+    print("Agent script setup for dynamic profiles. Run main() to initialize.")
+    # Example of how main *would* be called:
+    # try:
+    #     asyncio.run(main())
+    # except KeyboardInterrupt:
+    #     print("Process interrupted by user.")
+    # except Exception as e:
+    #     print(f"An error occurred: {e}")
+    pass # Placeholder for actual execution call
