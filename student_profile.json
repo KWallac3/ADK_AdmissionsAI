@@ -1,0 +1,23 @@
+{
+    "full_name": "Alice Morgan",
+    "grade_level": "11th",
+    "primary_sport": "Track and Field",
+    "events": [
+        "55m",
+        "100m",
+        "200m",
+        "Long Jump"
+    ],
+    "personal_records": {
+        "55M": "7.6",
+        "100m": "12.45",
+        "200m": "25.80",
+        "Long_Jump": "5.20m"
+    },
+    "gender": "Female",
+    "unweighted_gpa": 3.95,
+    "gpa_scale": 4.0,
+    "sat_score": 1280,
+    "act_score": "N/A",
+    "high_school": "My High School"
+}

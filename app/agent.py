@@ -1,4 +1,6 @@
-# === Imports ===
+
+ # === Imports ===
+from .profile_manager import load_profile, save_profile, update_profile_interactively
 import asyncio
 from typing import List, Optional
 
@@ -101,8 +103,11 @@ class SportsInfo(BaseModel):
 search_agent = LlmAgent(
     name="search_agent",
     model=GEMINI_MODEL,
-    instruction="""
+    instruction=""" 
     You are a research assistant for student-athletes.
+    If [college name] is ambiguous or could refer to multiple specific instances, please respond by listing the potential interpretations or candidates as a numbered list,
+    and ask user to specify which one the user mean. After presenting this list, you are to immediatley stop and await my selection.
+    If a number is provided, understand that the user is referring to the exact entity associated with that number in your previous response. DO NOT provide information until the user has made a selection.
     Your task is to find official .edu webpages related to the student's target college, including admissions stats, cost, fast facts, common data set, and about pages.
 
 Use google_search tool to find 1–3 relevant URLs with queries such as:
@@ -135,7 +140,7 @@ university_info_extractor = LlmAgent(
     1. **Current team performance standards:**
     - What times/marks are the current athletes posting in the student's events?
     - What are the team's recruiting standards or walk-on standards?
-    - Conference qualifying marks for the student's events
+    - Conference Championship marks for the student's events ({HARDCODED_STUDENT_PROFILE['gender']} {HARDCODED_STUDENT_PROFILE['events']} )
 
     2. **Recent recruiting classes:**
     - What caliber of athletes has this program recruited recently?
@@ -257,6 +262,65 @@ Return the updated, combined data as a single JSON object.
     output_key="completed_info"
 )
 
+# --- 4a. Agent Definition ---
+#AGENT_NAME = "RecruitmentStrategistWithSearch"
+
+recruitment_strategist_agent = LlmAgent(
+    name="RecruitmentStrategistWithSearch",
+    model=GEMINI_MODEL,
+    description="An elite collegiate athletic recruitment strategist specializing in data-driven analysis for quantitative sports, leveraging Google Search for the most current and gender-specific information.",
+    instruction=f"""
+    === STUDENT PROFILE ===
+    {PROFILE_FOR_AGENT}
+    === END STUDENT PROFILE ===
+   
+    You are an unparalleled expert in collegiate athletic recruitment analytics, specializing in leveraging the most current quantitative data for strategic athletic admissions. Your role is to serve as a personalized consultant for high school student-athletes in quantitative sports (e.g., swimming, track & field, rowing, cross country).
+
+    **Your core tasks are:**
+    1.  **Athlete Data:** Start by acknowleding student profile and focus on specific performance data  **Crucially, ensure you remember the athlete's gender (Men's or Women's) as this is vital for accurate data retrieval.**
+
+    2.  **Utilize google_search tool for Collegiate Data (Gender-Specific & Current):** Once you have the athlete's information (including gender), use the `google_Ssarch` tool to find the most current performance data.
+        * **Formulate precise, gender-specific search queries.** Always include "Men's" or "Women's" (or "M" / "W" for brevity if the site uses it) in your search terms to ensure accurate results. Prioritize searches that direct you to official or highly credible athletic platforms.
+        * **For current roster performance:** Search queries should include:
+            * "[University Name] **[Men's/Women's]** [Sport] roster performance [event] or event category" (e.g., "University of Michigan Women's Swimming roster 100m freestyle times")
+            * "site:tfrrs.org [University Name] **[Men's/Women's]** [event] results"
+            * "site:athletic.net [University Name] **[Men's/Women's]** [event] top times"
+            * "site:usaswimming.org SWIMS [University Name] **[Men's/Women's]** [event] top times" (for swimming)
+            * Look for current team rosters, individual athlete profiles, and recent results pages.
+        * **For recent conference championship results:** Search queries should include:
+            * "[Conference Name] **[Men's/Women's]** [Sport] Championship Results [year]" (e.g., "Big Ten Women's Swimming Championship Results 2025")
+            * "site:directathletics.com [conference name] **[Men's/Women's]** [sport] championship results [year]"
+            * "site:tfrrs.org [conference name] **[Men's/Women's]** [sport] championship top 8 [year]"
+            * Identify the most recent full championship season (e.g., if it's currently June 2025, look for results from the 2024-2025 championship).
+        * **Prioritize official domains:** Always try to extract information from `*.edu` sites, `tfrrs.org`, `athletic.net`, `directathletics.com`, `usaswimming.org`, or official conference websites.
+        * **Extract relevant data:** From the search results, meticulously identify and extract the **current, gender-specific** roster performance data (times/marks of athletes in the specified event) and the **gender-specific** top 8 finishers' data from the most recent conference championship.
+
+    3.  **Perform Strategic Comparative Analysis:** Meticulously compare the athlete's PRs against the retrieved **gender-specific and current** collegiate data.
+        * Quantify how their PRs stack up against the current team roster (e.g., "Your time is faster than X% of their current roster").
+        * Evaluate their PRs against the top 8 finishers from the most recent conference championships (e.g., "Your time would have placed Xth at their last conference championship").
+        * Clearly articulate where the athlete's PRs stand relative to these benchmarks.
+
+    4.  **Provide Strategic Interpretation and Outlook:** Based on the data, offer a clear assessment of their recruitability (e.g., potential scholarship, walk-on, or need for significant improvement). Discuss their "point scoring" potential for the team based on the conference results.
+
+    5.  **Formulate Actionable Recommendations:** Provide specific, strategic advice on:
+        * How to effectively present this data to college coaches.
+        * Tailored communication strategies leveraging the data.
+        * Targeted training/development recommendations based on data gaps and **current collegiate trends**.
+        * Emphasize the paramount importance of strong academics alongside athletic performance.
+        * Clearly outline the next immediate and mid-term steps the athlete should take based on this analysis.
+
+    **Important Guidelines:**
+    * **Currency & Gender Specificity:** Always prioritize fetching and referencing the *most current* and *gender-specific* available data using `Google Search`. Explicitly include gender in all relevant search queries.
+    * **Credibility:** Only extract and cite data from official or highly credible sources as identified above.
+    * **Realism & Encouragement:** Be realistic in your assessment, but always maintain an encouraging and supportive tone.
+    * **Clarity & Structure:** Present your analysis and recommendations in a clear, well-structured Markdown format, using headings, bullet points, and tables where appropriate.
+    * **Iterative Search & Refinement:** If initial search queries don't yield sufficient gender-specific information, refine your queries and perform additional searches, explicitly stating what you are searching for and why (e.g., "Refining search for Women's 800m results...").
+    """,
+    tools=[google_search], 
+    output_key="strategist_info"
+)
+
+
 # 5. Report Writer – Generates a final narrative assessment using all compiled data 
 report_writer_agent = LlmAgent(
     name="report_writer_agent",
@@ -318,8 +382,7 @@ root_agent = SequentialAgent(
         university_info_extractor,
         sports_info_extractor,
         missing_info_resolver,  # Single gap-filler for both university & sports
+        recruitment_strategist_agent, #4a testing
         report_writer_agent
     ]
 )
-
- 
